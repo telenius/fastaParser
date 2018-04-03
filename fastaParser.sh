@@ -229,12 +229,15 @@ done
 
 setRefGenomeFasta
 
-echo "RefGenomeFasta ${RefGenomeFasta}" >> parameters_capc.log
-echo "BowtieGenome ${BowtieGenome}" >> parameters_capc.log
+echo "RefGenomeFasta ${RefGenomeFasta}" >> parameters_fastaParser.log
+
+setCustomFasta
+
+echo "CustomFasta ${CustomFasta}" >> parameters_fastaParser.log
 
 setUCSCgenomeSizes
 
-echo "ucscBuild ${ucscBuild}" >> parameters_capc.log
+echo "ucscBuild ${ucscBuild}" >> parameters_fastaParser.log
 
 #------------------------------------------
 
@@ -258,7 +261,7 @@ echo
 
 writeParametersToCapcLogFile
 
-cat parameters_capc.log
+cat parameters_fastaParser.log
 echo
 
 echo "Whole genome fasta file path : ${GenomeFasta}"
@@ -269,6 +272,24 @@ checkedName='OligoFile'
 checkParse
 testedFile="${OligoFile}"
 doInputFileTesting
+
+#--------------------------------------------------------
+
+# Whitespace parse ..
+
+for file in ./PIPE*.txt
+    do
+        echo ${file}
+        sed -i 's/\s\s*/\t/g' ${file}
+        sed -i 's^\s\s*//g' ${file}
+        sed -i 's/\s\s*$//g' ${file}
+        mv -f ${file} TEMP.txt
+        cat TEMP.txt | sed 's/^\s*$//' | grep -v "^\s*$" > ${file}
+        rm -f TEMP.txt
+    done
+
+#--------------------------------------------------------
+
 
 #---------------------------------------------------------
 # 
@@ -338,11 +359,116 @@ doInputFileTesting
 
 # PARSING THE INPUT COORDINATE FILE
 # 
-# 6) Parsing the input coordinate file for non azAZ09_ characters. If any found, exit 1.
+# 6) Parsing the input coordinate file for non azAZ09_ characters (not emptylines, or { or } ). If any found, exit 1.
 #    Whitespace parsing : all \s\s* replaced with \i
 #    Checking all coordinate columns to contain only 0-9 characters. If non-numeric found, exit 1.
 #    Checking that all lines (not emptylines, or { or } ) contain a keyword (INSERTION, DELETION, INVERSION). If not, exit 1.
-#    
+#
+
+# ----------------------------------------------------------
+# About the coordinate file format :
+# ----------------------------------------------------------
+
+# 1) it is assumed that there is ONE EXISTING genome build, which is very close to the "aimed custom genome build"
+#    this genome is given as the "reference fasta" in the fastaParser.sh input. This reference fasta is the only obligatory input file. 
+
+# 2) the custom genome is built from two fasta files, 1) the reference and 2) custom fasta (optional).
+#    the reference fasta is NOT edited during the custom genome build, neither is the custom fasta.
+#    this means, that the coordinates of the files stay intact during the editing process.
+#    Once all parts "to be catenated together" have been extracted from the reference files,
+#    these are catenated together, and given as the new custom genome build.
+ 
+# 3) in the beginning, the "reference fasta" is copied to become the "template" of the new genome build.
+#    all changes are made by referring to the coordinates within this "copy of the reference fasta".
+#    sequences can be deleted from this copy of reference fasta, and custom sequences can be inserted into this fasta.
+#    The insertions and deletions will NOT affect the coordinate set of the fasta (during the building) - so two insertions to "same spot"
+#    in the reference fasta, will use exactly same coordinates (but yield to a sequential insertion of two different sequences),
+#    and two deletions to "same spot" in the reference fasta will delete the "same region" twice (i.e. essentially only once
+#    if the deletions are exactly the same location and lenght).
+#    Once all changes have been made, the chromosomes are finalized and the coordinate set of the output fasta will differ
+#    from the input reference fasta. But during generation of the fasta, all coordinates referring to "reference fasta" refer to the
+#    original coordinates of the reference build.
+#    If you want the coordinates to change during building - run the script multiple times (each change as a separate run) to get that behavior.
+#    There is also the {} construct to help you to build more complicated edits (see below)
+   
+# 4) the inserted sequences can be from ANOTHER fasta file (not part of the reference genome) - they are then called "insertions",
+#    or from the SAME fasta file - they are then called "duplications".
+
+# 5) translocation can be done by combining a "deletion" and an "duplication".
+#    there is also a helper function "translocation" for this.
+
+# 6) order of effect : all deletions are done first, insertions/duplications to exactly same location are made "top down" - the one mentioned first in the input file,
+#    will be left-most in the output fasta sequence. Combinatory types (translocation, inversion) follow the same rules (the deletion part of these types is done at first,
+#    with other deletions, and the insertion/duplication part is done "top down" - based on where exactly the line is located in the input file.)
+#    If you want to invert/translocate/duplicate already-edited region, the {} construct (below) allows you to do this.
+#    By default you can only add pieces from one build (reference or custom) at a time (in a single operation).
+
+# 7) insertion, translocation and duplication operations are strand-sensitive, so (+) and (-) determine whether the sequence inserted would be
+#    the reference strand (+) or its reverse complement (-) .
+   
+# 8) inversion can be done by combining a "deletion" and an "duplication" minus strand,
+#    i.e. it is a special case of "translocation" to mimus strand.
+#    there is also a helper function "inversion" for this.
+
+# 9) To generate multiple edits to same region, where an edited region is to be duplicated or inverted
+#    or translocated (copying or moving or inverting an already-edited region), there is the special construct {},
+#    which states the order of excecuting the commands.
+#    The {} block generates a new fasta to become "on-the-fly" reference, which can then be referred to normally via the {} block.
+#    This temporary fasta is also returned to the user as a separate output file, should the user want to check how the block was made.
+#    The inversion/duplication/translocation will take the already-generated edit block within the {}
+#    or part of it, and possibly some of the reference genome sequence immediately surrounding the {} block sequence, and operate on this EDITED sequence.
+#    In all other cases the EDITED sequence is never used in copypasting the things around.
+#    If you rather move to the edited-genome coordinates than use {} block structure where you still refer to the original coordinates all the way, you can run the script multiple times,
+#    each time giving the "previous edits" as the reference fasta for the new edits.
+
+# ----------------------------------------------------------
+# Coordinate file format :
+# ----------------------------------------------------------
+
+# Editing instructions are given by user, in input file PIPE_editingInstructions.txt
+
+# duplication duplNAME    chr1  100  chr1    200 300  +
+# insertion   insNAME     chr1  100  chrIn1  200 300  -
+# deletion    delNAME     chr1  100  200
+
+# translocation trNAME    chr1  100  chr1    200 300 +
+# actually consists of operations :
+# deletion    delNAME     chr1  200  300
+# duplication duplNAME    chr1  100  chr1    200 300  +
+
+# inversion   invNAME     chr1  100  200
+# can also be written as
+# translocation trNAME    chr1  100  chr1    100 200 -
+# and thus actually consists of operations :
+# deletion    delNAME     chr1  100  200
+# duplication duplNAME    chr1  100  chr1    100 200  -
+
+# The difference between "duplication" and "insertion" : from which fasta
+# (reference or custom) the inserted sequence is taken from
+
+
+# For complicated edits (where already-edited sequence needs to be copypasted), inversion/translocation/duplication blocks can be written as "WHERE" block :
+#
+# inversion invNAME  chr1 100 200 WHERE whereNAME
+#
+# and the whereNAME is then given in a separate parameter file like so :
+#
+# PIPE_instructionsForWhere_whereNAME.txt
+#
+# duplication duplNAME    chr1  100  chr1    200 300  +
+# insertion   insNAME     chr1  100  chrIn1  200 300  -
+# deletion    delNAME     chr1  100  200
+# inversion   invNAME     chr1  100  200    
+#
+# There can be unlimited amount of PIPE_instructionsForWhere_*.txt files.
+# However, nested loops (instructionsForWhere txt files using WHERE constructs) are not supported.
+# (this is not because it is hard to code it - the code is easy to modify to support this
+#  however, it is hard for a human to keep track on these nested changes when making the files, so 2 levels should be enough.)
+#
+# In that case the bracketed block is done first, and the inversion block will be constructed (containing the changed regions but
+# possibly also wider/narrower block)
+
+
 # 7) Checking that the types match their coordinates (INSERTION, DELETION, INVERSION). If not, exit 1.
 # 
 # 8) Comparing the chr names of the input coordinate file, to the custom fasta and ref genome. If any not found, exit 1.
