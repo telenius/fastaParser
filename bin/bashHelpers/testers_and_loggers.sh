@@ -50,9 +50,9 @@ echo ""
 echo -e "${printThis}"
 echo ""
 
-echo "" >> "/dev/stderr"
-echo -e "${printThis}" >> "/dev/stderr"
-echo "" >> "/dev/stderr"
+echo "" >&2
+echo -e "${printThis}" >&2
+echo "" >&2
     
 }
 

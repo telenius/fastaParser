@@ -91,9 +91,16 @@ TEMPwhereGroupsCount=$(($( cat ${frameworkfile} | rev | cut -f 1-2 | rev | grep 
 
 doAllForFramework(){
     
+    printThis="Starting editing for ${frameworkfile} in folder ${frameworkfolder}"
+    printNewChapterToLogFile
+    
     mkdir ${frameworkfolder}
     weWereHere=$(pwd)
     cp ${frameworkfile} ${frameworkfolder}
+    
+    cdCommand='cd ${frameworkfolder}'
+    cdToThis="${frameworkfolder}"
+    checkCdSafety
     cd ${frameworkfolder}
 
     testedFile="${frameworkfile}"
@@ -118,18 +125,128 @@ doAllForFramework(){
     
     # Now only ins/del/dupl lines remain, and we can start looping ..
     
+    # ------------------------------------------------
+    # Preparing deletions ..
+    
+    # deletion    delNAME     chr1  100  200
     deletionLines=[]
-    deletionLines=($( cat ${simpleframeworkfile} | grep '^deletion\s' ))
+    # sorting by chromosome ..
+    deletionLines=($( cat ${simpleframeworkfile} | grep '^deletion\s' | sort -k3,3 ))
+    deletionChrs=[]
+    deletionChrs=($( cat ${simpleframeworkfile} | grep '^deletion\s' | cut -f 3 | sort | uniq ))
+    deletionChrCount=0
+    deletionChrCount=($( cat ${simpleframeworkfile} | grep '^deletion\s' | cut -f 3 | sort | uniq | grep -c "" ))
     
+    if [ "${deletionChrCount}" -ne 0 ]; then
+    echo ""
+    echo "Will make deletions to the following chromosomes :"
+    echo "" 
+    for i in $( seq 0 $((${#deletionChrs[@]} - 1)) ); do
+    echo "${deletionChrs[i]}"
+    done
+    echo ""
+    fi
+    
+    # ------------------------------------------------
+    # Preparing insertions ..
+
     insDupLines=[]
+    # no sorting as order is important ..
     insDupLines=($( cat ${simpleframeworkfile} | grep -v '^deletion\s' ))
+    insDupChrs=[]
+    insDupChrs=($( cat ${simpleframeworkfile} | grep -v '^deletion\s' | cut -f 3 | sort | uniq ))
+    insDupChrCount=0
+    insDupChrCount=($( cat ${simpleframeworkfile} | grep -v '^deletion\s' | cut -f 3 | sort | uniq | grep -c "" ))
     
-    for i in $( seq 0 $((${#deletionLines[@]} - 1)) ); do
+    insChrCount=0
+    insChrCount=($( cat ${simpleframeworkfile} | grep '^insertion\s' | cut -f 3 | sort | uniq | grep -c "" ))
+    insChrs=[]
+    insChrs=($( cat ${simpleframeworkfile} | grep '^insertion\s' | cut -f 3 | sort | uniq ))
+    dupChrCount=0
+    dupChrCount=($( cat ${simpleframeworkfile} | grep '^duplication\s' | cut -f 3 | sort | uniq | grep -c "" ))
+    dupChrs=[]
+    dupChrs=($( cat ${simpleframeworkfile} | grep '^duplication\s' | cut -f 3 | sort | uniq ))
+    
+    if [ "${insChrCount}" -ne 0 ]; then
+    echo ""
+    echo "Will make insertions (from custom fasta) to the following chromosomes :"
+    echo "" 
+    for i in $( seq 0 $((${#deletionChrs[@]} - 1)) ); do
+    echo "${insChrs[i]}"
+    done
+    echo ""
+    fi
+    
+
+    if [ "${dupChrCount}" -ne 0 ]; then
+    echo ""
+    echo "Will make duplications (from reference fasta or WHERE block) to the following chromosomes :"
+    echo "" 
+    for i in $( seq 0 $((${#deletionChrs[@]} - 1)) ); do
+    echo "${dupChrs[i]}"
+    done
+    echo ""
+    fi
+    
+    # ------------------------------------------------
+    # Executing deletions ..
+    
+    if [ "${deletionChrCount}" -ne 0 ]; then
+    printThis="Starting to make the deletions .."
+    printNewChapterToLogFile
+    
+    for i in $( seq 0 $((${#deletionChrs[@]} - 1)) ); do
+    printThis="Making deletions for chromosome ${deletionChrs[i]} .."
+    printToLogFile
     
     # Here deletion parses - only for chromosomes we actually need.
+    thisChrLines=($( cat ${simpleframeworkfile} | grep '^deletion\s' | awk '{if($3=="'${deletionChrs[i]}'") print $0}' ))
     
+    previousCoordinate=0
+        for j in $( seq 0 $((${#thisChrLines[@]} - 1)) ); do
+            printThis="Making deletion #'${TEMPcounter}' .."
+            printToLogFile
+            
+            # bedtools getfasta -fi ${GenomeFasta} -fo testMinus.fa -bed test.bed
+            
+            # deletion    delNAME     chr1  100  200
+            delNAME=$( echo ${thisChrLines[j]} | cut -f 2 )
+            delBEDchr=$( echo ${thisChrLines[j]} | cut -f 3 )
+            delBEDend=$( echo ${thisChrLines[j]} | cut -f 4 )
+            delBEDnext=$( echo ${thisChrLines[j]} | cut -f 5 )
+            
+            echo "wholeLine:"
+            echo ${thisChrLines[j]} | cat -A
+            echo "delNAME ${delNAME} : delBEDchr ${delBEDchr} : delBEDend ${delBEDend} : delBEDnext ${delBEDnext} "
+            
+            echo -e ${delBEDchr}"\t"${previousCoordinate}"\t"${delBEDend} > TEMP.bed
+            echo "TEMP.bed :"
+            cat TEMP.bed
+            rm -f ${delNAME}.err
+            echo "bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo del_${deletionChrs[i]_${delNAME}_del${i}withinChr.fa"
+            bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo "del_${deletionChrs[i]_${delNAME}_del${i}withinChr.fa" \
+              2> ${delNAME}.err
+            
+            if [ -s ${delNAME}.err ]; then
+              printThis="Bedtools getfasta got errors :"
+              printToLogFile
+              cat ${delNAME}.err
+              cat ${delNAME}.err >&2
+              printThis="EXITING ! "
+              printToLogFile
+              exit 1
+            fi
+            
+            rm -f TEMP.bed 
+            
+        done
     done
+    fi
+
     
+    # ------------------------------------------------
+    # Executing insertions ..
+
     for i in $( seq 0 $((${#insDupLines[@]} - 1)) ); do
     
     # Here insDup parses - only for chromosomes we actually need.
@@ -138,6 +255,8 @@ doAllForFramework(){
     
     done
 
+    # ------------------------------------------------
+    
     cdCommand='cd ${weWereHere} in forWhere_${whereName}'
     cdToThis="${weWereHere}"
     checkCdSafety
