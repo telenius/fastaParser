@@ -106,6 +106,8 @@ doAllForFramework(){
     testedFile="${frameworkfile}"
     doInputFileTesting
     
+    frameworkFullpath=$( dirname ${frameworkfile} )
+    
     simpleframeworkfile="UNDEFINED"
     revertFileToSimpleOperations
     
@@ -199,12 +201,28 @@ doAllForFramework(){
     printThis="Making deletions for chromosome ${deletionChrs[i]} .."
     printToLogFile
     
+    if [ -d "${deletionChrs[i]}" ]; then
+    rmCommand='rm -rf ${deletionChrs[i]}'
+    rmThis="${deletionChrs[i]}"
+    checkRemoveSafety   
+    rm -rf ${deletionChrs[i]}
+    fi
+    
+    mkdir ${deletionChrs[i]}
+    
+    cdCommand='cd ${deletionChrs[i]}'
+    cdToThis="${deletionChrs[i]}"
+    checkCdSafety
+    cd ${deletionChrs[i]}
+    
     # Here deletion parses - only for chromosomes we actually need.
     thisChrLines=($( cat ${simpleframeworkfile} | grep '^deletion\s' | awk '{if($3=="'${deletionChrs[i]}'") print $0}' ))
     
+    # Coordinate for next line start ..
+    delBEDchr="UNDEFINED"
     previousCoordinate=0
         for j in $( seq 0 $((${#thisChrLines[@]} - 1)) ); do
-            printThis="Making deletion #'${TEMPcounter}' .."
+            printThis="Making deletion $((j+1)) .."
             printToLogFile
             
             # bedtools getfasta -fi ${GenomeFasta} -fo testMinus.fa -bed test.bed
@@ -215,6 +233,19 @@ doAllForFramework(){
             delBEDend=$( echo ${thisChrLines[j]} | cut -f 4 )
             delBEDnext=$( echo ${thisChrLines[j]} | cut -f 5 )
             
+            checkThis="${delNAME}"
+            checkedName='${delNAME}'
+            checkParse
+            checkThis="${delBEDchr}"
+            checkedName='${delBEDchr}'
+            checkParse
+            checkThis="${delBEDend}"
+            checkedName='${delBEDend}'
+            checkParse
+            checkThis="${delBEDnext}"
+            checkedName='${delBEDnext}'
+            checkParse
+            
             echo "wholeLine:"
             echo ${thisChrLines[j]} | cat -A
             echo "delNAME ${delNAME} : delBEDchr ${delBEDchr} : delBEDend ${delBEDend} : delBEDnext ${delBEDnext} "
@@ -223,8 +254,8 @@ doAllForFramework(){
             echo "TEMP.bed :"
             cat TEMP.bed
             rm -f ${delNAME}.err
-            echo "bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo del_${deletionChrs[i]_${delNAME}_del${i}withinChr.fa"
-            bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo "del_${deletionChrs[i]_${delNAME}_del${i}withinChr.fa" \
+            echo "bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo before_del_${deletionChrs[i]}_${delNAME}_del$((${j}+1))withinChr.fa"
+            bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo "before_del_${deletionChrs[i]}_${delNAME}_del$((${j}+1))withinChr.fa" \
               2> ${delNAME}.err
             
             if [ -s ${delNAME}.err ]; then
@@ -237,21 +268,185 @@ doAllForFramework(){
               exit 1
             fi
             
-            rm -f TEMP.bed 
+            rm -f TEMP.bed
+            
+            previousCoordinate=${delBEDnext}
             
         done
+        
+        # Last coordinate FASTA separately - to chromosome end.
+        
+        printThis="Making last fragment of chromosome .."
+        printToLogFile
+        
+        delBEDend=$( cat ${ucscBuild} | grep '^'${delBEDchr}'\s' | sed 's/\s\s*/\t/g' | cut -f 2 )
+        
+        echo -e ${delBEDchr}"\t"${previousCoordinate}"\t"${delBEDend} > TEMP.bed
+        echo "TEMP.bed :"
+        cat TEMP.bed
+        rm -f ${delNAME}.err
+        echo "bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo last_fragment_${deletionChrs[i]}.fa"
+        bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo "last_fragment_${deletionChrs[i]}.fa" \
+          2> ${delNAME}.err
+        
+        if [ -s ${delNAME}.err ]; then
+          printThis="Bedtools getfasta got errors :"
+          printToLogFile
+          cat ${delNAME}.err
+          cat ${delNAME}.err >&2
+          printThis="EXITING ! "
+          printToLogFile
+          exit 1
+        fi
+        
+        rm -f TEMP.bed        
+        
+        
+        previousCoordinate=0
+        
+        cdCommand='cd ${frameworkFullpath}'
+        cdToThis="${frameworkFullpath}"
+        checkCdSafety
+        cd ${frameworkFullpath}
+        
     done
+    
+    
     fi
 
     
     # ------------------------------------------------
     # Executing insertions ..
 
-    for i in $( seq 0 $((${#insDupLines[@]} - 1)) ); do
+    if [ "${insDupChrCount}" -ne 0 ]; then
+    printThis="Starting to make the insertions and/or duplications .."
+    printNewChapterToLogFile
+    
     
     # Here insDup parses - only for chromosomes we actually need.
-    
     # Here the insDup region may be a WHERE region - this needs a separate if region
+    
+    for i in $( seq 0 $((${#insDupChrs[@]} - 1)) ); do
+    printThis="Making insertions/duplicationss for chromosome ${insDupChrs[i]} .."
+    printToLogFile
+    
+    if [ ! -d "${insDupChrs[i]}" ]; then
+    mkdir ${insDupChrs[i]}
+    fi
+    
+    cdCommand='cd ${insDupChrs[i]}'
+    cdToThis="${insDupChrs[i]}"
+    checkCdSafety
+    cd ${insDupChrs[i]}
+    
+    # Here insertions/duplications parses - only for chromosomes we actually need.
+    thisChrLines=($( cat ${simpleframeworkfile} | grep -v '^deletion\s' | awk '{if($3=="'${insDupChrs[i]}'") print $0}' ))
+    
+        for j in $( seq 0 $((${#thisChrLines[@]} - 1)) ); do
+            printThis="Making insertion/duplication $((j+1)) .."
+            printToLogFile
+            
+            # bedtools getfasta -fi ${GenomeFasta} -fo testMinus.fa -bed test.bed
+            
+            # duplication duplNAME    chr1  100  chr1    200 300  +
+            # insertion   insNAME     chr1  100  chrIn1  200 300  -
+            
+            insDupTYPE=$( echo ${thisChrLines[j]} | cut -f 1 )
+            insDupNAME=$( echo ${thisChrLines[j]} | cut -f 2 )
+            insDupBEDrefChr=$( echo ${thisChrLines[j]} | cut -f 3 )
+            insDupBEDrefLocation=$( echo ${thisChrLines[j]} | cut -f 4 )
+            insDupBEDcustomChr=$( echo ${thisChrLines[j]} | cut -f 5 )
+            insDupBEDcustomStart=$( echo ${thisChrLines[j]} | cut -f 6 )
+            insDupBEDcustomStop=$( echo ${thisChrLines[j]} | cut -f 7 )
+            insDupBEDcustomStrand=$( echo ${thisChrLines[j]} | cut -f 7 )
+            
+            checkThis="${insDupTYPE}"
+            checkedName='${insDupTYPE}'
+            checkParse
+            echo -n "insDupTYPE ${insDupTYPE}"
+            
+            checkThis="${insDupNAME}"
+            checkedName='${insDupNAME}'
+            checkParse
+            echo -n "insDupNAME ${insDupNAME}"
+            
+            echo
+            
+            checkThis="${insDupBEDrefChr}"
+            checkedName='${insDupBEDrefChr}'
+            checkParse
+            echo -n "insDupBEDrefChr ${insDupBEDrefChr}"
+            
+            checkThis="${insDupBEDrefLocation}"
+            checkedName='${insDupBEDrefLocation}'
+            checkParse
+            echo -n "insDupBEDrefLocation ${insDupBEDrefLocation}"
+            
+            echo
+            
+            checkThis="${insDupBEDcustomChr}"
+            checkedName='${insDupBEDcustomChr}'
+            checkParse
+            echo -n "insDupBEDcustomChr ${insDupBEDcustomChr}"
+            
+            checkThis="${insDupBEDcustomStart}"
+            checkedName='${insDupBEDcustomStart}'
+            checkParse
+            echo -n "insDupBEDcustomStart ${insDupBEDcustomStart}"
+            
+            checkThis="${insDupBEDcustomStop}"
+            checkedName='${insDupBEDcustomStop}'
+            checkParse
+            echo -n "insDupBEDcustomStop ${insDupBEDcustomStop}"
+            
+            checkThis="${insDupBEDcustomStrand}"
+            checkedName='${insDupBEDcustomStrand}'
+            checkParse
+            echo -n "insDupBEDcustomStrand ${insDupBEDcustomStrand}"
+            
+            echo
+            
+            
+            insDupFASTA="UNDEFINED"
+            if [ "${insDupTYPE}" == "insertion" ];then
+                insDupFASTA="${CustomFasta}"
+            elif [ "${insDupTYPE}" == "duplciation" ];then
+                insDupFASTA="${CustomFasta}"
+            else
+              printThis="insDupTYPE '${insDupTYPE}' is not supported. This is a bug, report it to Jelena. EXITING !"
+              exit 1  
+            fi
+            
+            echo "wholeLine:"
+            echo ${thisChrLines[j]} | cat -A
+            
+            insDupBEDcustomChr=$( echo ${thisChrLines[j]} | cut -f 5 )
+            insDupBEDcustomStart=$( echo ${thisChrLines[j]} | cut -f 6 )
+            insDupBEDcustomStop=$( echo ${thisChrLines[j]} | cut -f 7 )
+            insDupBEDcustomStrand=$( echo ${thisChrLines[j]} | cut -f 7 )
+            
+            echo -e ${insDupBEDcustomChr}"\t"${insDupBEDcustomStart}"\t"${insDupBEDcustomStop}"\t1\t"${insDupBEDcustomStrand} > TEMP.bed
+            echo "TEMP.bed :"
+            cat TEMP.bed
+            rm -f ${insDupNAME}.err
+            echo "bedtools getfasta -bed TEMP.bed -fi ${insDupFASTA} -fo ${insDupChrs[i]}_${insDupNAME}_insdup$((${j}+1))withinChr.fa"
+            bedtools getfasta -bed TEMP.bed -fi ${insDupFASTA} -fo "${insDupChrs[i]}_${insDupNAME}_insdup$((${j}+1))withinChr.fa" \
+              2> ${insDupNAME}.err
+            
+            if [ -s ${insDupNAME}.err ]; then
+              printThis="Bedtools getfasta got errors :"
+              printToLogFile
+              cat ${insDupNAME}.err
+              cat ${insDupNAME}.err >&2
+              printThis="EXITING ! "
+              printToLogFile
+              exit 1
+            fi
+            
+            rm -f TEMP.bed
+            
+        done
+    
     
     done
 

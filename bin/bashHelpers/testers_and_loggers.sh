@@ -407,6 +407,9 @@ fi
 
 checkRemoveSafety(){
     
+# rmCommand=
+# rmThis=
+
 # This relies on the $HOME of the script to be set to the "local top dir" in the beginning of each "main script" !
 
 # This assumes the rm command to only have ONE argument - not a list of them.
@@ -418,8 +421,6 @@ checkRemoveSafety(){
 
 # The arguments are not supposed to expand - i.e give all things in non-starred format to this.
     
-# rmCommand=
-# rmThis=
 
 if [ "${#rmThis}" -eq 0 ]; then
   printThis="Cannot rm as rmThis variable has zero lenght in rm command \n ${rmCommand} \nEXITING"
