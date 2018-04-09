@@ -8,6 +8,10 @@
 # insertion   insNAME     chr1  100  chrIn1  200 300  -
 # deletion    delNAME     chr1  100  200
 
+# Insertion and Duplication also need extra line "break point" to allow parsing the
+# proper breaks during the deletion printing
+# breakpoint  insNAME     chr1  100  100 
+
 # translocation trNAME    chr1  100  chr1    200 300 +
 # actually consists of operations :
 # deletion    delNAME     chr1  200  300
@@ -40,9 +44,18 @@ if($1=="translocation")\
  print "duplication\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7"\t"$8"\t"$9"\t"$10} \
 else { print $0 } }' > TEMP_inversionsAndTranslocationsReverted.txt
 
-simpleframeworkfile=$(fp TEMP_inversionsAndTranslocationsReverted.txt)
+# Add "break point" for the insertions and duplications - to be printed with the deletions ..
+# insertion   insNAME     chr1  100  chrIn1  200 300  -
+# breakpoint  insNAME     chr1  100  100 
+cat TEMP_inversionsAndTranslocationsReverted.txt  | awk '{ \
+if($1=="insertion" || $1=="duplication")\
+{print "breakpoint\t"$2"\t"$3"\t"$3";\
+ print $0} \
+else { print $0 } }' > TEMP_breakPointAdded.txt
 
-printThis="updated frameworkfile in ${frameworkfile}"    
+simpleframeworkfile=$(fp TEMP_breakPointAdded.txt)
+
+printThis="generated simple frameworkfile in ${simpleframeworkfile}"    
 printToLogFile
 
 }
@@ -189,8 +202,33 @@ doAllForFramework(){
     done
     echo ""
     fi
+
     
     # ------------------------------------------------
+    # Preparing breakpoints for insertions / duplications ..
+    
+    # breakpoint    delNAME     chr1  100  200
+    breakpointLines=[]
+    # sorting by chromosome ..
+    breakpointLines=($( cat ${simpleframeworkfile} | grep '^breakpoint\s' | sort -k3,3 ))
+    breakpointChrs=[]
+    breakpointChrs=($( cat ${simpleframeworkfile} | grep '^breakpoint\s' | cut -f 3 | sort | uniq ))
+    breakpointChrCount=0
+    breakpointChrCount=($( cat ${simpleframeworkfile} | grep '^breakpoint\s' | cut -f 3 | sort | uniq | grep -c "" ))
+    
+    if [ "${breakpointChrCount}" -ne 0 ]; then
+    echo ""
+    echo "Will make breakpoints for insertions/duplications to the following chromosomes :"
+    echo "" 
+    for i in $( seq 0 $((${#breakpointChrs[@]} - 1)) ); do
+    echo "${breakpointChrs[i]}"
+    done
+    echo ""
+    fi
+    
+    
+    # ------------------------------------------------
+    
     # Executing deletions ..
     
     if [ "${deletionChrCount}" -ne 0 ]; then
@@ -216,23 +254,27 @@ doAllForFramework(){
     cd ${deletionChrs[i]}
     
     # Here deletion parses - only for chromosomes we actually need.
-    thisChrLines=($( cat ${simpleframeworkfile} | grep '^deletion\s' | awk '{if($3=="'${deletionChrs[i]}'") print $0}' ))
+    thisChrLines=($( cat ${simpleframeworkfile} | grep -v '^insertion\s' | grep -v '^duplication\s'  | awk '{if($3=="'${deletionChrs[i]}'") print $0}' ))
     
     # Coordinate for next line start ..
     delBEDchr="UNDEFINED"
     previousCoordinate=0
         for j in $( seq 0 $((${#thisChrLines[@]} - 1)) ); do
-            printThis="Making deletion $((j+1)) .."
+            printThis="Making deletion / breakpoint $((j+1)) .."
             printToLogFile
             
             # bedtools getfasta -fi ${GenomeFasta} -fo testMinus.fa -bed test.bed
             
             # deletion    delNAME     chr1  100  200
+            delTYPE=$( echo ${thisChrLines[j]} | cut -f 1 )
             delNAME=$( echo ${thisChrLines[j]} | cut -f 2 )
             delBEDchr=$( echo ${thisChrLines[j]} | cut -f 3 )
             delBEDend=$( echo ${thisChrLines[j]} | cut -f 4 )
             delBEDnext=$( echo ${thisChrLines[j]} | cut -f 5 )
             
+            checkThis="${delTYPE}"
+            checkedName='${delTYPE}'
+            checkParse
             checkThis="${delNAME}"
             checkedName='${delNAME}'
             checkParse
@@ -248,14 +290,22 @@ doAllForFramework(){
             
             echo "wholeLine:"
             echo ${thisChrLines[j]} | cat -A
-            echo "delNAME ${delNAME} : delBEDchr ${delBEDchr} : delBEDend ${delBEDend} : delBEDnext ${delBEDnext} "
+            echo "delTYPE ${delTYPE}"
+            if [ "${delTYPE}" == "deletion" ]; then
+              echo "delNAME ${delNAME} : delBEDchr ${delBEDchr} : delBEDend ${delBEDend} : delBEDnext ${delBEDnext} "
+            elif [ "${delTYPE}" == "breakpoint" ]; then
+              echo "breakNAME ${delNAME} : breakBEDchr ${delBEDchr} : breakBEDend ${delBEDend} : breakBEDnext ${delBEDnext} "
+            else
+              printThis="delTYPE '${delTYPE}' is not supported. This is a bug, report it to Jelena. EXITING !"
+              exit 1  
+            fi
             
             echo -e ${delBEDchr}"\t"${previousCoordinate}"\t"${delBEDend} > TEMP.bed
             echo "TEMP.bed :"
             cat TEMP.bed
             rm -f ${delNAME}.err
-            echo "bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo before_del_${deletionChrs[i]}_${delNAME}_del$((${j}+1))withinChr.fa"
-            bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo "before_del_${deletionChrs[i]}_${delNAME}_del$((${j}+1))withinChr.fa" \
+            echo "bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo before_del_${deletionChrs[i]}_${delNAME}_delOrBreak$((${j}+1))withinChr.fa"
+            bedtools getfasta -bed TEMP.bed -fi ${RefGenomeFasta} -fo "before_del_${deletionChrs[i]}_${delNAME}_delOrBreak$((${j}+1))withinChr.fa" \
               2> ${delNAME}.err
             
             if [ -s ${delNAME}.err ]; then
@@ -327,7 +377,7 @@ doAllForFramework(){
     # Here the insDup region may be a WHERE region - this needs a separate if region
     
     for i in $( seq 0 $((${#insDupChrs[@]} - 1)) ); do
-    printThis="Making insertions/duplicationss for chromosome ${insDupChrs[i]} .."
+    printThis="Making insertions/duplications for chromosome ${insDupChrs[i]} .."
     printToLogFile
     
     if [ ! -d "${insDupChrs[i]}" ]; then
@@ -340,7 +390,7 @@ doAllForFramework(){
     cd ${insDupChrs[i]}
     
     # Here insertions/duplications parses - only for chromosomes we actually need.
-    thisChrLines=($( cat ${simpleframeworkfile} | grep -v '^deletion\s' | awk '{if($3=="'${insDupChrs[i]}'") print $0}' ))
+    thisChrLines=($( cat ${simpleframeworkfile} | grep -v '^deletion\s'  | grep -v '^breakpoint\s' | awk '{if($3=="'${insDupChrs[i]}'") print $0}' ))
     
         for j in $( seq 0 $((${#thisChrLines[@]} - 1)) ); do
             printThis="Making insertion/duplication $((j+1)) .."
@@ -410,7 +460,7 @@ doAllForFramework(){
             insDupFASTA="UNDEFINED"
             if [ "${insDupTYPE}" == "insertion" ];then
                 insDupFASTA="${CustomFasta}"
-            elif [ "${insDupTYPE}" == "duplciation" ];then
+            elif [ "${insDupTYPE}" == "duplication" ];then
                 insDupFASTA="${CustomFasta}"
             else
               printThis="insDupTYPE '${insDupTYPE}' is not supported. This is a bug, report it to Jelena. EXITING !"
@@ -445,11 +495,59 @@ doAllForFramework(){
             
             rm -f TEMP.bed
             
+            echo ">${insDupBEDrefChr}:${insDupBEDrefLocation}-${insDupBEDrefLocation}" > ${insDupChrs[i]}_${insDupNAME}_insdup$((${j}+1))refLocation.txt
+            
         done
     
     
     done
+    
+    # ------------------------------------------------
+    # Collect the fastas of the chromosomes
+    
+    # ${insDupChrs[i]}_${insDupNAME}_insdup$((${j}+1))withinChr.fa
+    # before_del_${deletionChrs[i]}_${delNAME}_delOrBreak$((${j}+1))withinChr.fa
+    # last_fragment_${deletionChrs[i]}.fa
+    
+    echo -e "outFasta\tchr\tstr\tstp"
+    for file in */*.fa
+    do
+        echo -n $file
+        head -n 1 $file | sed 's/[:>-]/\t/g' | cut -f 1-3
+    done
 
+    # ${insDupChrs[i]}_${insDupNAME}_insdup$((${j}+1))refLocation.txt
+
+    echo -e "outFastaPositionInsDup\tchr\tstr\tstp"
+    for file in */*refLocation.txt
+    do
+        echo -n $file
+        head -n 1 $file | sed 's/[:>-]/\t/g' | cut -f 1-3
+    done
+    
+    # Catenate all found in correct order, to make full chromosomes ..
+
+    rm -rf fullChromosomes
+    mkdir fullChromosomes
+    
+    # for chromosome in foundChrList
+    # for fragment in cat fastaCoorsdinateAndNameList | grep thischromosome
+    #   catenate in correct order
+    #   match line lenght to reference build, fix not-full lines
+    #   save in fullChromosomes/chromosome.fa
+    # ------------------------------------------------
+    # Fetch the rest of chromosomes, 
+    
+    # for chromosome in ucscbuildfile
+    # if exists chromosome as fullChromosomes/chromosome.fa , do nothing
+    # else 
+    # bedtools getfasta to fetch the chromosome
+    
+    # Catenate the chromosomes
+    # echo -n "" > fullGenomeBuild.fa
+    # for chromosome in ucscbuildfile (taking that as the output fasta order)
+    # cat chromosome.fat >> fullGenomeBuild.fa
+    
     # ------------------------------------------------
     
     cdCommand='cd ${weWereHere} in forWhere_${whereName}'
