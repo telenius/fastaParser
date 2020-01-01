@@ -1,4 +1,4 @@
-The ucsctools wigToBigWig and bedToBigBed can be distributed under GPL3 license.
+The ucsctools wigToBigWig and bedToBigBed can be distributed under MIT license.
 
 This does not hold for all of the ucsctools : more about ucsctools licensing in here :
 https://genome.ucsc.edu/license/
@@ -15,11 +15,11 @@ http://hgdownload.soe.ucsc.edu/admin/exe/
 
 Licensing details :
 
-So, ucsctools wigToBigWig and bedToBigBed can be distributed under GPL3 license :
+So, ucsctools wigToBigWig and bedToBigBed can be distributed under MIT license :
 They come from 
 kent/src/utils ( github repository in https://github.com/ENCODE-DCC/kentUtils/tree/master/src/utils )
 
-This means, they are available for all users, and thus can be distributed under GPL3 license.
+This means, they are available for all users, and thus can be distributed under MIT license.
 This does not hold for all of the ucsctools : more about ucsctools licensing in here :
 https://genome.ucsc.edu/license/
 

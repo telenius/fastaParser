@@ -1,5 +1,24 @@
 #!/bin/bash
 
+##########################################################################
+# Copyright 2018, Jelena Telenius (jelena.telenius@imm.ox.ac.uk)         #
+#                                                                        #
+# This file is part of fastaParser .                                      #
+#                                                                        #
+# fastaParser is free software: you can redistribute it and/or modify     #
+# it under the terms of the MIT license.
+#
+#
+#                                                                        #
+# fastaParser is distributed in the hope that it will be useful,          #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of         #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          #
+# MIT license for more details.
+#                                                                        #
+# You should have received a copy of the MIT license
+# along with fastaParser.  
+##########################################################################
+
 function finish {
 if [ $? != "0" ]; then
 echo
@@ -7,9 +26,12 @@ echo "RUN CRASHED ! - check qsub.err to see why !"
 echo
 
 else
+if [ ${parameterList} != "-h" ] && [ ${parameterList} != "--help" ]
+then
 echo
 echo "Analysis complete !"
 date
+fi
 
 fi
 }
@@ -35,7 +57,7 @@ then
 parameterList=$@
 if [ ${parameterList} == "-h" ] || [ ${parameterList} == "--help" ]
 then
-. ${CaptureSerialPath}/bashHelpers/usageAndVersion.sh
+. ${HelperScriptsPath}/usageAndVersion.sh
 usage
 exit
 
@@ -204,7 +226,7 @@ echo
 
 # --------------------------------------
 
-OPTS=`getopt -o h,m --long help,outfile:,errfile: -- "$@"`
+OPTS=`getopt -o h --long help -- "$@"`
 if [ $? != 0 ]
 then
     exit 1
@@ -215,15 +237,63 @@ eval set -- "$OPTS"
 while true ; do
     case "$1" in
         -h) usage ; shift;;
-        -m) LOWERCASE_M=$2 ; shift 2;;
         --help) usage ; shift;;
-        --outfile) QSUBOUTFILE=$2 ; shift 2;;
-        --errfile) QSUBERRFILE=$2 ; shift 2;;
         --) shift; break;;
     esac
 done
 
-# ----------------------------------------------
+#--------Generating-the-parameter-files-for-the-subscripts------------------------------------------------------
+
+# If any param file is missing ..
+    
+if [ ! -s "./PIPE_referenceGenome.txt" ] ;then
+    echo  >&2
+    echo "PIPE_referenceGenome.txt file not found : reference fasta path cannot be set ! - fastaParser run aborted"  >&2
+    echo  >&2
+    echo "Usage instructions available with :"  >&2
+    echo "fastaParser.sh --help "  >&2
+    echo  >&2
+    
+    exit 1
+fi
+
+if [ ! -s "./PIPE_editingInstructions.txt" ] ;then
+    echo  >&2
+    echo "PIPE_editingInstructions.txt file not found : list your edits in the file and try again ! - fastaParser run aborted"  >&2
+    echo  >&2
+    echo "Usage instructions available with :"  >&2
+    echo "fastaParser.sh --help "  >&2
+    echo  >&2
+    
+    exit 1
+fi
+
+if [ -s "./PIPE_customGenomes.txt" ] ;then
+    echo  >&2
+    echo "PIPE_customGenomes.txt file found : will load custom sequences for the parser to use as well !"  >&2
+    echo  >&2
+fi
+
+#---------------------------------------------------------
+# Here parsing the parameter files - if they are not purely tab-limited, but partially space-limited, or multiple-tab limited, this fixes it.
+# Also, removing emptylines.
+
+echo
+echo "PARAMETER FILES GIVEN IN RUN FOLDER :"
+echo
+
+for file in ./PIPE*.txt
+    do
+        echo ${file}
+        sed -i 's/\s\s*/\t/g' ${file}
+        sed -i 's/^\s*//' ${file}
+        sed -i 's/\s*$//' ${file}
+        mv -f ${file} TEMP.txt
+        cat TEMP.txt | sed 's/^\s*$//' | grep -v "^\s*$" > ${file}
+        rm -f TEMP.txt
+    done
+
+#---------------------------------------------------------
 
 # Modifying and adjusting parameter values, based on run flags
 
@@ -235,9 +305,9 @@ setCustomFasta
 
 echo "CustomFasta ${CustomFasta}" >> parameters_fastaParser.log
 
-setUCSCgenomeSizes
+# setUCSCgenomeSizes
 
-echo "ucscBuild ${ucscBuild}" >> parameters_fastaParser.log
+# echo "ucscBuild ${ucscBuild}" >> parameters_fastaParser.log
 
 #------------------------------------------
 

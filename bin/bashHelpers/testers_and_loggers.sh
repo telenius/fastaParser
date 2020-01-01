@@ -1,22 +1,22 @@
 #!/bin/bash
 
 ##########################################################################
-# Copyright 2017, Jelena Telenius (jelena.telenius@imm.ox.ac.uk)         #
+# Copyright 2018, Jelena Telenius (jelena.telenius@imm.ox.ac.uk)         #
 #                                                                        #
-# This file is part of CCseqBasic5 .                                     #
+# This file is part of fastaParser .                                      #
 #                                                                        #
-# CCseqBasic5 is free software: you can redistribute it and/or modify    #
-# it under the terms of the GNU General Public License as published by   #
-# the Free Software Foundation, either version 3 of the License, or      #
-# (at your option) any later version.                                    #
+# fastaParser is free software: you can redistribute it and/or modify     #
+# it under the terms of the MIT license.
+#
+#
 #                                                                        #
-# CCseqBasic5 is distributed in the hope that it will be useful,         #
+# fastaParser is distributed in the hope that it will be useful,          #
 # but WITHOUT ANY WARRANTY; without even the implied warranty of         #
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          #
-# GNU General Public License for more details.                           #
+# MIT license for more details.
 #                                                                        #
-# You should have received a copy of the GNU General Public License      #
-# along with CCseqBasic5.  If not, see <http://www.gnu.org/licenses/>.   #
+# You should have received a copy of the MIT license
+# along with fastaParser.  
 ##########################################################################
 
 # Just in case emptying this out - if there happens to be one in the env
